@@ -1,0 +1,11 @@
+The Implementation Sequence
+
+The Engine (Chunker & Merkle Tree): Slicing files and generating cryptographic identities.
+
+The Vault (Storage): The atomic CAS flat-file writer and the bbolt metadata index.
+
+The Highway (Data Plane): The HTTP zero-copy server with HMAC-SHA256 authentication.
+
+The Brains (Control Plane): SWIM Gossip UDP and gRPC diffing.
+
+The Orchestrator: fsnotify file watching and tying it all together.

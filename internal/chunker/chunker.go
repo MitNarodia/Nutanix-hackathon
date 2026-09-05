@@ -57,14 +57,15 @@ func (c *FastCDCChunker) ChunkFile(path string) ([]Chunk, error) {
 			return nil, fmt.Errorf("chunking failed at %d: %w", seq, err)
 		}
 
-		hash := sha256.Sum256(part.Data)
+		data := append([]byte(nil), part.Data...)
+		hash := sha256.Sum256(data)
 
 		chunks = append(chunks, Chunk{
 			Hash:     hash,
 			Offset:   uint64(part.Offset),
 			Size:     uint32(part.Length),
 			Sequence: seq,
-			Data:     part.Data,
+			Data:     data,
 		})
 
 		seq++
