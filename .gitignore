@@ -1,18 +1,16 @@
-/nusync
+# Binaries
+nusync
 *.exe
-*.o
-*.a
+*.exe~
+*.dll
+*.so
+*.dylib
 
-*.db
-*.bbolt
+# Test output
+*.test
+*.out
+
+# Project-specific temporary files
+.nusync/
 data/
-
-coverage.out
-c.out
-
-/vendor/
-
-.DS_Store
-.idea/
-.vscode/
-*.swp
+testdata/
