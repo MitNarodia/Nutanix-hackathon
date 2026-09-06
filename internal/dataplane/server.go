@@ -3,6 +3,7 @@ package dataplane
 import (
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
@@ -16,15 +17,17 @@ type Server struct {
 	addr       string
 	verifier   auth.Verifier
 	cas        *store.CASBlobStore
+	metaStore  *store.BoltMetaStore
 	sem        *semaphore.Weighted
 	maxStreams int64
 }
 
-func NewServer(addr string, verifier auth.Verifier, cas *store.CASBlobStore, maxConcurrentStreams int64) *Server {
+func NewServer(addr string, verifier auth.Verifier, cas *store.CASBlobStore, metaStore *store.BoltMetaStore, maxConcurrentStreams int64) *Server {
 	return &Server{
 		addr:       addr,
 		verifier:   verifier,
 		cas:        cas,
+		metaStore:  metaStore,
 		sem:        semaphore.NewWeighted(maxConcurrentStreams),
 		maxStreams: maxConcurrentStreams,
 	}
@@ -33,6 +36,7 @@ func NewServer(addr string, verifier auth.Verifier, cas *store.CASBlobStore, max
 func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/chunk", s.handleGetChunk)
+	mux.HandleFunc("/meta", s.handleGetMeta)
 
 	server := &http.Server{
 		Addr:         s.addr,
@@ -107,4 +111,21 @@ func (s *Server) handleGetChunk(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	http.ServeContent(w, r, "", stat.ModTime(), file)
+}
+
+func (s *Server) handleGetMeta(w http.ResponseWriter, r *http.Request) {
+	if err := s.verifier.VerifyHTTP(r); err != nil {
+		http.Error(w, "Unauthorized", http.StatusForbidden)
+		return
+	}
+	
+	fileID := r.URL.Query().Get("id")
+	meta, err := s.metaStore.GetFileMeta(fileID)
+	if err != nil {
+		http.Error(w, "Not found", http.StatusNotFound)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(meta)
 }

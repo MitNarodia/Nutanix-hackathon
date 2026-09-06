@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -129,4 +130,33 @@ func (c *Client) FetchSingle(ctx context.Context, peerAddr string, hash [32]byte
 			resp.StatusCode,
 		)
 	}
+}
+
+func (c *Client) FetchMeta(ctx context.Context, peerAddr string, fileID string) (*store.FileMeta, error) {
+	url := fmt.Sprintf("http://%s/meta?id=%s", peerAddr, fileID)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create meta request: %w", err)
+	}
+
+	// Zero-Trust: Sign the request
+	c.signer.SignHTTP(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("peer unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to fetch meta: HTTP %d", resp.StatusCode)
+	}
+
+	var meta store.FileMeta
+	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
+		return nil, fmt.Errorf("invalid meta JSON: %w", err)
+	}
+
+	return &meta, nil
 }
