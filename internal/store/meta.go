@@ -62,6 +62,21 @@ func (s *BoltMetaStore) GetFileMeta(fileID string) (*FileMeta, error) {
 	return &meta, err
 }
 
+func (s *BoltMetaStore) ListFiles() ([]string, error) {
+	var files []string
+	err := s.db.View(func(tx *bbolt.Tx) error {
+		b := tx.Bucket([]byte("files"))
+		if b == nil {
+			return nil
+		}
+		return b.ForEach(func(k, v []byte) error {
+			files = append(files, string(k))
+			return nil
+		})
+	})
+	return files, err
+}
+
 func (s *BoltMetaStore) Close() error {
 	return s.db.Close()
 }

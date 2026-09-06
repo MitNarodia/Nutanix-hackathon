@@ -7,6 +7,8 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"google.golang.org/grpc"
 
@@ -16,6 +18,7 @@ import (
 	"github.com/MitNarodia/Nutanix-hackathon/internal/dataplane"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/discovery"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/merkle"
+	"github.com/MitNarodia/Nutanix-hackathon/internal/orchestrator"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/store"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/watcher"
 	pb "github.com/MitNarodia/Nutanix-hackathon/proto"
@@ -32,6 +35,8 @@ type Daemon struct {
 	Watcher    *watcher.Watcher
 	grpcServer *grpc.Server
 	grpcPort   int
+	httpPort   int
+	secret     []byte
 }
 
 func NewDaemon(name string, baseDir string, httpPort int, grpcPort int, gossipPort int, secret []byte) (*Daemon, error) {
@@ -77,6 +82,8 @@ func NewDaemon(name string, baseDir string, httpPort int, grpcPort int, gossipPo
 		Client:     client,
 		grpcServer: grpcServer,
 		grpcPort:   grpcPort,
+		httpPort:   httpPort,
+		secret:     secret,
 	}
 
 	w, err := watcher.NewWatcher(baseDir, func(filePath string) {
@@ -92,11 +99,19 @@ func NewDaemon(name string, baseDir string, httpPort int, grpcPort int, gossipPo
 }
 
 func (d *Daemon) HandleFileChange(path string) {
-	if filepath.Ext(path) == ".db" || filepath.Base(path) == "restored_file.txt" {
+	baseName := filepath.Base(path)
+	if filepath.Ext(path) == ".db" || strings.HasPrefix(baseName, "restored_") {
 		return
 	}
 
-	fmt.Printf("\n[%s] File change detected: %s\n", d.Name, path)
+	// Normalize the path so peers can request it uniformly
+	relPath, err := filepath.Rel(d.BaseDir, path)
+	if err != nil {
+		relPath = filepath.Base(path)
+	}
+	fileID := relPath
+
+	fmt.Printf("\n[%s] File change detected: %s (ID: %s)\n", d.Name, path, fileID)
 
 	c := chunker.NewFastCDCChunker(8192)
 	chunks, err := c.ChunkFile(path)
@@ -113,7 +128,7 @@ func (d *Daemon) HandleFileChange(path string) {
 	}
 
 	meta := store.FileMeta{
-		FileID:      path,
+		FileID:      fileID,
 		MerkleRoot:  merkle.ComputeRoot(chunks),
 		ChunkHashes: hashes,
 	}
@@ -121,7 +136,7 @@ func (d *Daemon) HandleFileChange(path string) {
 	d.MetaStore.PutFileMeta(meta)
 
 	fmt.Printf(
-		"   -> Auto-indexed %d chunks. Merkle Root: %x\n",
+		"    -> Auto-indexed %d chunks. Merkle Root: %x\n",
 		len(chunks),
 		meta.MerkleRoot[:4],
 	)
@@ -160,6 +175,64 @@ func (d *Daemon) Start(ctx context.Context, seedPeers []string) {
 	if err := d.Watcher.Start(ctx); err != nil {
 		log.Printf("[%s] Warning: Watcher failed to start: %v", d.Name, err)
 	}
+
+	go func() {
+		ticker := time.NewTicker(4 * time.Second)
+		defer ticker.Stop()
+
+		engine := orchestrator.NewEngine(
+			d.Name,
+			d.secret,
+			d.BaseDir,
+			d.CAS,
+			d.MetaStore,
+			d.Client,
+		)
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				peerPorts := []int{9200, 9201}
+				for _, pPort := range peerPorts {
+					if pPort == d.httpPort {
+						continue
+					}
+					peerHTTPAddr := fmt.Sprintf("127.0.0.1:%d", pPort)
+
+					ctxTimeout, cancel := context.WithTimeout(ctx, 3*time.Second)
+					remoteFiles, err := d.Client.FetchCatalog(ctxTimeout, peerHTTPAddr)
+					cancel()
+					
+					if err != nil {
+						continue
+					}
+
+					for _, fileID := range remoteFiles {
+						if strings.HasPrefix(fileID, "restored_") || strings.Contains(fileID, "restored_") || filepath.Ext(fileID) == ".db" {
+							continue
+						}
+
+						localMeta, err := d.MetaStore.GetFileMeta(fileID)
+						if err != nil || len(localMeta.ChunkHashes) == 0 {
+							gRPCAddr := fmt.Sprintf("127.0.0.1:%d", pPort-100)
+							log.Printf("[%s] Autonomous discovery: missing file %s on peer %s. Syncing...", d.Name, fileID, gRPCAddr)
+
+							go func(fID, gPeer string) {
+								bgCtx := context.Background()
+								if err := engine.Pull(bgCtx, fID, gPeer, []string{gPeer}); err != nil {
+									log.Printf("[%s] Auto-sync failed for %s: %v", d.Name, fID, err)
+								} else {
+									log.Printf("[%s] Successfully auto-synced %s!", d.Name, fID)
+								}
+							}(fileID, gRPCAddr)
+						}
+					}
+				}
+			}
+		}
+	}()
 
 	fmt.Printf("[%s] Daemon online and watching %s.\n", d.Name, d.BaseDir)
 }

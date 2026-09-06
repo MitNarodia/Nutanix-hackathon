@@ -99,7 +99,7 @@ func (d *Daemon) StartLocalAPI(port int, secret []byte) {
 
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
-	fmt.Printf("🔌 Local CLI API listening on %s\n", addr)
+	fmt.Printf("Local CLI API listening on %s\n", addr)
 
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Printf("API server exited: %v", err)

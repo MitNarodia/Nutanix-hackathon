@@ -37,6 +37,7 @@ func (s *Server) Start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/chunk", s.handleGetChunk)
 	mux.HandleFunc("/meta", s.handleGetMeta)
+	mux.HandleFunc("/catalog", s.handleGetCatalog)
 
 	server := &http.Server{
 		Addr:         s.addr,
@@ -128,4 +129,20 @@ func (s *Server) handleGetMeta(w http.ResponseWriter, r *http.Request) {
 	
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(meta)
+}
+
+func (s *Server) handleGetCatalog(w http.ResponseWriter, r *http.Request) {
+	if err := s.verifier.VerifyHTTP(r); err != nil {
+		http.Error(w, "Unauthorized", http.StatusForbidden)
+		return
+	}
+	
+	files, err := s.metaStore.ListFiles()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(files)
 }

@@ -212,6 +212,42 @@ func (c *Client) FetchMeta(ctx context.Context, peerAddr string, fileID string) 
 	return &meta, nil
 }
 
+func (c *Client) FetchCatalog(ctx context.Context, peerAddr string) ([]string, error) {
+	url := fmt.Sprintf("http://%s/catalog", peerAddr)
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		url,
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create catalog request: %w", err)
+	}
+
+	c.signer.SignHTTP(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("peer unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf(
+			"failed to fetch catalog: HTTP %d",
+			resp.StatusCode,
+		)
+	}
+
+	var files []string
+	if err := json.NewDecoder(resp.Body).Decode(&files); err != nil {
+		return nil, fmt.Errorf("invalid catalog JSON: %w", err)
+	}
+
+	return files, nil
+}
+
 func ParseRateLimit(resp *http.Response) time.Duration {
 	if resp.StatusCode != http.StatusTooManyRequests {
 		return 0

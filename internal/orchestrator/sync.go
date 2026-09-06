@@ -38,11 +38,9 @@ func NewEngine(nodeID string, secret []byte, baseDir string, cas *store.CASBlobS
 	}
 }
 
-// Pull executes the v3 Sync spec: gRPC diff -> Rarest-First -> HTTP fetch -> Sparse Assembly
 func (e *Engine) Pull(ctx context.Context, fileID string, seedGrpcAddr string, allPeers []string) error {
-	fmt.Printf("\n🚀 Initiating Sync for %s\n", filepath.Base(fileID))
+	fmt.Printf("\nInitiating Sync for %s\n", filepath.Base(fileID))
 
-	// 1. gRPC Control Plane - Merkle Diffing
 	ctrlClient, err := control.NewControlClient(seedGrpcAddr, e.Secret, e.NodeID)
 	if err != nil {
 		return fmt.Errorf("control plane connection failed: %w", err)
@@ -57,22 +55,29 @@ func (e *Engine) Pull(ctx context.Context, fileID string, seedGrpcAddr string, a
 		knownChunks = append(knownChunks, hc)
 	}
 
+	host, portStr, _ := net.SplitHostPort(seedGrpcAddr)
+	port, _ := strconv.Atoi(portStr)
+	httpPeer := fmt.Sprintf("%s:%d", host, port+100)
+
+	remoteMeta, err := e.Client.FetchMeta(ctx, httpPeer, fileID)
+	if err != nil {
+		return fmt.Errorf("failed to fetch remote meta: %w", err)
+	}
+
 	diff, err := ctrlClient.Diff(ctx, fileID, localMeta.MerkleRoot[:], knownChunks)
 	if err != nil {
 		return fmt.Errorf("diff failed: %w", err)
 	}
 
 	if diff.IsSynced {
-		fmt.Println("✅ File is completely in sync.")
+		fmt.Println("File is completely in sync.")
 		return nil
 	}
 	
-	fmt.Printf("🔍 Diff complete: %d chunks missing.\n", len(diff.MissingChunkHashes))
+	fmt.Printf("Diff complete: %d chunks missing.\n", len(diff.MissingChunkHashes))
 
-	// 2. Scheduler - Build Rarity Map
 	rarityMap := scheduler.BuildRarityMap(ctx, diff.MissingChunkHashes, allPeers, e.Secret, e.NodeID)
 
-	// 3. Data Plane - Concurrent Rarest-First Downloads
 	var wg sync.WaitGroup
 	errChan := make(chan error, len(rarityMap))
 
@@ -88,24 +93,21 @@ func (e *Engine) Pull(ctx context.Context, fileID string, seedGrpcAddr string, a
 			copy(chunkHash[:], c.Hash)
 
 			for _, peerGrpc := range c.Peers {
-				// Infer HTTP Data Plane port from gRPC port (e.g. 9100 -> 9200)
 				host, portStr, _ := net.SplitHostPort(peerGrpc)
 				port, _ := strconv.Atoi(portStr)
 				httpPeer := fmt.Sprintf("%s:%d", host, port+100) 
 
-				// Apply Peer Health Tracking
 				if !e.Tracker.IsAvailable(httpPeer) {
 					continue
 				}
 
-				// Fetch with Jittered Backoff
 				for attempt := 1; attempt <= 3; attempt++ {
 					data, err := e.Client.FetchChunk(httpPeer, chunkHash)
 					if err != nil {
 						if attempt == 3 {
-							break // Exhausted retries, try next peer
+							break 
 						}
-						// Rate-limited or busy: backoff and retry
+
 						backoff := scheduler.CalcJitteredBackoff(attempt, 500*time.Millisecond, 5*time.Second)
 						e.Tracker.MarkHot(httpPeer, backoff)
 						time.Sleep(backoff)
@@ -113,7 +115,7 @@ func (e *Engine) Pull(ctx context.Context, fileID string, seedGrpcAddr string, a
 					}
 
 					e.CAS.Put(chunkHash, data)
-					return // Success
+					return 
 				}
 			}
 			errChan <- fmt.Errorf("exhausted all peers for chunk %x", c.Hash[:4])
@@ -125,26 +127,28 @@ func (e *Engine) Pull(ctx context.Context, fileID string, seedGrpcAddr string, a
 	if len(errChan) > 0 {
 		return <-errChan
 	}
-	fmt.Println("📦 All chunks secured in CAS.")
+	fmt.Println("All chunks secured in CAS.")
 
-	// 4. Sparse File Assembly
 	outPath := filepath.Join(e.BaseDir, "restored_"+filepath.Base(fileID))
-	sparse, err := assembler.NewSparseFile(outPath, 0, len(diff.MissingChunkHashes))
+	sparse, err := assembler.NewSparseFile(outPath, 0, len(remoteMeta.ChunkHashes))
 	if err != nil {
 		return fmt.Errorf("assembler failed: %w", err)
 	}
 
 	var currentOffset int64 = 0
-	for i, h := range diff.MissingChunkHashes {
-		var ch [32]byte
-		copy(ch[:], h)
-		data, _ := e.CAS.Get(ch)
+	for i, h := range remoteMeta.ChunkHashes {
+		data, _ := e.CAS.Get(h)
 		
 		sparse.WriteChunk(i, currentOffset, data)
 		currentOffset += int64(len(data))
 	}
 	
 	sparse.Close()
-	fmt.Printf("🎉 File assembled successfully at: %s\n", outPath)
+
+	if err := e.MetaStore.PutFileMeta(*remoteMeta); err != nil {
+		return fmt.Errorf("failed to save meta: %w", err)
+	}
+
+	fmt.Printf("File assembled successfully at: %s\n", outPath)
 	return nil
 }
