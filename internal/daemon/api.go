@@ -2,17 +2,34 @@ package daemon
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 
-	"github.com/MitNarodia/Nutanix-hackathon/internal/assembler"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/chunker"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/merkle"
+	"github.com/MitNarodia/Nutanix-hackathon/internal/orchestrator"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/store"
 )
 
-func (d *Daemon) StartLocalAPI(port int) {
+type SyncRequest struct {
+	FileID   string   `json:"file_id"`
+	SeedAddr string   `json:"seed_addr"`
+	Peers    []string `json:"peers"`
+}
+
+func (d *Daemon) StartLocalAPI(port int, secret []byte) {
 	mux := http.NewServeMux()
+
+	engine := orchestrator.NewEngine(
+		d.Name,
+		secret,
+		d.BaseDir,
+		d.CAS,
+		d.MetaStore,
+		d.Client,
+	)
 
 	mux.HandleFunc("/ingest", func(w http.ResponseWriter, r *http.Request) {
 		path := r.URL.Query().Get("path")
@@ -48,85 +65,43 @@ func (d *Daemon) StartLocalAPI(port int) {
 	})
 
 	mux.HandleFunc("/sync", func(w http.ResponseWriter, r *http.Request) {
-		peer := r.URL.Query().Get("peer")
-		fileID := r.URL.Query().Get("id")
-
-		if peer == "" || fileID == "" {
-			http.Error(
-				w,
-				"Missing 'peer' or 'id' parameters",
-				http.StatusBadRequest,
-			)
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
-		fmt.Printf("Starting sync for %s from %s...\n", fileID, peer)
+		var req SyncRequest
 
-		ctx := context.Background()
-
-		meta, err := d.Client.FetchMeta(ctx, peer, fileID)
-		if err != nil {
-			http.Error(
-				w,
-				fmt.Sprintf("Meta sync failed: %v", err),
-				http.StatusInternalServerError,
-			)
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		fmt.Printf(
-			"   -> Blueprint received. Merkle Root: %x\n",
-			meta.MerkleRoot[:4],
-		)
+		if len(req.Peers) == 0 {
+			req.Peers = []string{req.SeedAddr}
+		}
 
-		for i, hash := range meta.ChunkHashes {
-			err := d.Client.FetchSingle(ctx, peer, hash)
-			if err != nil {
-				msg := fmt.Sprintf("Failed to fetch chunk %d: %v", i, err)
-				fmt.Println("  Wrong Chunk !! " + msg)
-				http.Error(w, msg, http.StatusInternalServerError)
-				return
+		go func() {
+			bgCtx := context.Background()
+			if err := engine.Pull(
+				bgCtx,
+				req.FileID,
+				req.SeedAddr,
+				req.Peers,
+			); err != nil {
+				log.Printf("\n❌ [%s] Sync failed: %v", d.Name, err)
 			}
-		}
+		}()
 
-		fmt.Printf(
-			"   -> %d chunks synced and cryptographically verified.\n",
-			len(meta.ChunkHashes),
-		)
-
-		outPath := "restored_file.txt"
-
-		if err := assembler.Assemble(
-			d.CAS,
-			meta.ChunkHashes,
-			outPath,
-		); err != nil {
-			http.Error(
-				w,
-				fmt.Sprintf("Assembly failed: %v", err),
-				http.StatusInternalServerError,
-			)
-			return
-		}
-
-		d.MetaStore.PutFileMeta(*meta)
-
-		successMsg := fmt.Sprintf(
-			"Done!! ... Sync complete! File assembled at %s\n",
-			outPath,
-		)
-
-		fmt.Print(successMsg)
-		fmt.Fprint(w, successMsg)
+		w.WriteHeader(http.StatusAccepted)
+		fmt.Fprintf(w, "Sync initiated for %s\n", req.FileID)
 	})
 
-	fmt.Printf(
-		"Local CLI API listening on 127.0.0.1:%d\n",
-		port,
-	)
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
-	http.ListenAndServe(
-		fmt.Sprintf("127.0.0.1:%d", port),
-		mux,
-	)
+	fmt.Printf("🔌 Local CLI API listening on %s\n", addr)
+
+	if err := http.ListenAndServe(addr, mux); err != nil {
+		log.Printf("API server exited: %v", err)
+	}
 }

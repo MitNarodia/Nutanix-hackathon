@@ -69,6 +69,48 @@ func NewClient(signer auth.Signer, cas *store.CASBlobStore) *Client {
 	}
 }
 
+func (c *Client) FetchChunk(peerAddr string, hash [32]byte) ([]byte, error) {
+	hashHex := hex.EncodeToString(hash[:])
+	url := fmt.Sprintf("http://%s/chunk?h=%s", peerAddr, hashHex)
+
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"%w: failed to create request: %v",
+			ErrPeerUnreachable,
+			err,
+		)
+	}
+
+	c.signer.SignHTTP(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrPeerUnreachable, err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return io.ReadAll(resp.Body)
+
+	case http.StatusTooManyRequests:
+		return nil, ErrRateLimited
+
+	case http.StatusForbidden:
+		return nil, ErrUnauthorized
+
+	case http.StatusNotFound:
+		return nil, ErrChunkNotFound
+
+	default:
+		return nil, fmt.Errorf(
+			"unexpected HTTP status code: %d",
+			resp.StatusCode,
+		)
+	}
+}
+
 func (c *Client) FetchSingle(ctx context.Context, peerAddr string, hash [32]byte) error {
 	hashHex := hex.EncodeToString(hash[:])
 	url := fmt.Sprintf("http://%s/chunk?h=%s", peerAddr, hashHex)
@@ -107,7 +149,8 @@ func (c *Client) FetchSingle(ctx context.Context, peerAddr string, hash [32]byte
 	case http.StatusTooManyRequests:
 		retrySecs := 2
 
-		if value := resp.Header.Get("Retry-After"); value != "" {
+		value := resp.Header.Get("Retry-After")
+		if value != "" {
 			if n, err := strconv.Atoi(value); err == nil {
 				retrySecs = n
 			}
@@ -135,12 +178,16 @@ func (c *Client) FetchSingle(ctx context.Context, peerAddr string, hash [32]byte
 func (c *Client) FetchMeta(ctx context.Context, peerAddr string, fileID string) (*store.FileMeta, error) {
 	url := fmt.Sprintf("http://%s/meta?id=%s", peerAddr, fileID)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		url,
+		nil,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create meta request: %w", err)
 	}
 
-	// Zero-Trust: Sign the request
 	c.signer.SignHTTP(req)
 
 	resp, err := c.httpClient.Do(req)
@@ -150,10 +197,14 @@ func (c *Client) FetchMeta(ctx context.Context, peerAddr string, fileID string) 
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to fetch meta: HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf(
+			"failed to fetch meta: HTTP %d",
+			resp.StatusCode,
+		)
 	}
 
 	var meta store.FileMeta
+
 	if err := json.NewDecoder(resp.Body).Decode(&meta); err != nil {
 		return nil, fmt.Errorf("invalid meta JSON: %w", err)
 	}
@@ -162,15 +213,16 @@ func (c *Client) FetchMeta(ctx context.Context, peerAddr string, fileID string) 
 }
 
 func ParseRateLimit(resp *http.Response) time.Duration {
-	if resp.StatusCode == http.StatusTooManyRequests {
-		
-		retryHeader := resp.Header.Get("Retry-After")
-
-		if seconds, err := strconv.Atoi(retryHeader); err == nil && seconds > 0 {
-			return time.Duration(seconds) * time.Second
-		}
-
-		return 2 * time.Second
+	if resp.StatusCode != http.StatusTooManyRequests {
+		return 0
 	}
-	return 0
+
+	retryHeader := resp.Header.Get("Retry-After")
+
+	seconds, err := strconv.Atoi(retryHeader)
+	if err == nil && seconds > 0 {
+		return time.Duration(seconds) * time.Second
+	}
+
+	return 2 * time.Second
 }

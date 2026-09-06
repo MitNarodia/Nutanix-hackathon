@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"io"
 	"path/filepath"
 )
 
@@ -52,4 +53,14 @@ func (s *CASBlobStore) GetFile(hash [32]byte) (*os.File, error) {
 	path := filepath.Join(s.baseDir, "objects", name)
 
 	return os.Open(path)
+}
+
+func (s *CASBlobStore) Get(hash [32]byte) ([]byte, error) {
+	f, err := s.GetFile(hash)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	
+	return io.ReadAll(f)
 }
