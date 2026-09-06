@@ -160,3 +160,17 @@ func (c *Client) FetchMeta(ctx context.Context, peerAddr string, fileID string) 
 
 	return &meta, nil
 }
+
+func ParseRateLimit(resp *http.Response) time.Duration {
+	if resp.StatusCode == http.StatusTooManyRequests {
+		
+		retryHeader := resp.Header.Get("Retry-After")
+
+		if seconds, err := strconv.Atoi(retryHeader); err == nil && seconds > 0 {
+			return time.Duration(seconds) * time.Second
+		}
+
+		return 2 * time.Second
+	}
+	return 0
+}
