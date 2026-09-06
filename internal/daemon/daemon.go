@@ -4,30 +4,37 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 
+	"google.golang.org/grpc"
+
 	"github.com/MitNarodia/Nutanix-hackathon/internal/auth"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/chunker"
+	"github.com/MitNarodia/Nutanix-hackathon/internal/control"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/dataplane"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/discovery"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/merkle"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/store"
 	"github.com/MitNarodia/Nutanix-hackathon/internal/watcher"
+	pb "github.com/MitNarodia/Nutanix-hackathon/proto"
 )
 
 type Daemon struct {
-	Name      string
-	BaseDir   string
-	CAS       *store.CASBlobStore
-	MetaStore *store.BoltMetaStore
-	Gossip    *discovery.GossipNode
-	Server    *dataplane.Server
-	Client    *dataplane.Client
-	Watcher   *watcher.Watcher
+	Name       string
+	BaseDir    string
+	CAS        *store.CASBlobStore
+	MetaStore  *store.BoltMetaStore
+	Gossip     *discovery.GossipNode
+	Server     *dataplane.Server
+	Client     *dataplane.Client
+	Watcher    *watcher.Watcher
+	grpcServer *grpc.Server
+	grpcPort   int
 }
 
-func NewDaemon(name string, baseDir string, httpPort int, gossipPort int, secret []byte) (*Daemon, error) {
+func NewDaemon(name string, baseDir string, httpPort int, grpcPort int, gossipPort int, secret []byte) (*Daemon, error) {
 	os.MkdirAll(baseDir, 0755)
 
 	cas, err := store.NewCASBlobStore(baseDir)
@@ -53,14 +60,23 @@ func NewDaemon(name string, baseDir string, httpPort int, gossipPort int, secret
 	client := dataplane.NewClient(authLayer, cas)
 	gossip := discovery.NewGossipNode(name, gossipPort)
 
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(auth.UnaryServerInterceptor(secret)),
+	)
+
+	controlService := control.NewControlServer(name, meta, cas)
+	pb.RegisterControlServiceServer(grpcServer, controlService)
+
 	d := &Daemon{
-		Name:      name,
-		BaseDir:   baseDir,
-		CAS:       cas,
-		MetaStore: meta,
-		Gossip:    gossip,
-		Server:    server,
-		Client:    client,
+		Name:       name,
+		BaseDir:    baseDir,
+		CAS:        cas,
+		MetaStore:  meta,
+		Gossip:     gossip,
+		Server:     server,
+		Client:     client,
+		grpcServer: grpcServer,
+		grpcPort:   grpcPort,
 	}
 
 	w, err := watcher.NewWatcher(baseDir, func(filePath string) {
@@ -118,6 +134,25 @@ func (d *Daemon) Start(ctx context.Context, seedPeers []string) {
 		}
 	}()
 
+	go func() {
+		lis, err := net.Listen(
+			"tcp",
+			fmt.Sprintf("0.0.0.0:%d", d.grpcPort),
+		)
+		if err != nil {
+			log.Fatalf("[%s] Failed to listen on gRPC port: %v", d.Name, err)
+		}
+
+		fmt.Printf(
+			"gRPC Control plane listening on 0.0.0.0:%d\n",
+			d.grpcPort,
+		)
+
+		if err := d.grpcServer.Serve(lis); err != nil {
+			log.Printf("[%s] gRPC server exited: %v", d.Name, err)
+		}
+	}()
+
 	if err := d.Gossip.Start(seedPeers); err != nil {
 		log.Fatalf("[%s] Control plane failed to start: %v", d.Name, err)
 	}
@@ -131,5 +166,6 @@ func (d *Daemon) Start(ctx context.Context, seedPeers []string) {
 
 func (d *Daemon) Stop() {
 	d.Gossip.Stop()
+	d.grpcServer.GracefulStop()
 	d.MetaStore.Close()
 }

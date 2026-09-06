@@ -3,6 +3,16 @@ module github.com/MitNarodia/Nutanix-hackathon
 go 1.25.0
 
 require (
+	github.com/fsnotify/fsnotify v1.10.1
+	github.com/hashicorp/memberlist v0.6.0
+	github.com/jotfs/fastcdc-go v0.2.0
+	go.etcd.io/bbolt v1.5.0
+	golang.org/x/sync v0.22.0
+	google.golang.org/grpc v1.83.2
+	google.golang.org/protobuf v1.36.12
+)
+
+require (
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
@@ -12,14 +22,12 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/hashicorp/golang-lru v0.5.0 // indirect
-	github.com/hashicorp/memberlist v0.6.0 // indirect
-	github.com/jotfs/fastcdc-go v0.2.0 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/sean-/seed v0.0.0-20170313163322-e2103e2c3529 // indirect
-	go.etcd.io/bbolt v1.5.0 // indirect
-	golang.org/x/mod v0.31.0 // indirect
-	golang.org/x/net v0.55.0 // indirect
-	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.45.0 // indirect
-	golang.org/x/tools v0.40.0 // indirect
+	golang.org/x/mod v0.38.0 // indirect
+	golang.org/x/net v0.58.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 )

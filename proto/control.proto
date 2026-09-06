@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package control;
+option go_package = "github.com/MitNarodia/Nutanix-hackathon/proto/control";
+
+service ControlService {
+  // DiffMerkleTree compares Merkle roots and identifies missing chunk hashes
+  rpc DiffMerkleTree(DiffRequest) returns (DiffResponse);
+
+  // GetChunkAvailability queries whether this node holds specific chunks
+  rpc GetChunkAvailability(AvailabilityRequest) returns (AvailabilityResponse);
+
+  // Ping checks liveness and reports telemetry
+  rpc Ping(PingRequest) returns (PingResponse);
+}
+
+message DiffRequest {
+  string file_id = 1;
+  bytes local_merkle_root = 2; // 32-byte Merkle root
+  repeated bytes known_chunk_hashes = 3; // Chunks the requester already has
+}
+
+message DiffResponse {
+  string file_id = 1;
+  bytes remote_merkle_root = 2;
+  bool is_synced = 3;
+  repeated bytes missing_chunk_hashes = 4; // Chunks the requester needs to fetch
+}
+
+message AvailabilityRequest {
+  repeated bytes chunk_hashes = 1;
+}
+
+message AvailabilityResponse {
+  repeated bytes available_chunk_hashes = 1;
+}
+
+message PingRequest {
+  string node_id = 1;
+}
+
+message PingResponse {
+  string node_id = 1;
+  uint32 file_count = 2;
+  uint32 chunk_count = 3;
+  uint64 uptime_secs = 4;
+  int64 active_streams = 5;
+  int64 max_streams = 6;
+  uint32 degraded_watch_paths = 7;
+}
