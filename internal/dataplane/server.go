@@ -119,14 +119,14 @@ func (s *Server) handleGetMeta(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusForbidden)
 		return
 	}
-	
+
 	fileID := r.URL.Query().Get("id")
 	meta, err := s.metaStore.GetFileMeta(fileID)
 	if err != nil {
 		http.Error(w, "Not found", http.StatusNotFound)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(meta)
 }
@@ -136,13 +136,13 @@ func (s *Server) handleGetCatalog(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Unauthorized", http.StatusForbidden)
 		return
 	}
-	
-	files, err := s.metaStore.ListFiles()
+
+	files, err := s.metaStore.ListCatalog()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(files)
 }

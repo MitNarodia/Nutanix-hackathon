@@ -62,19 +62,36 @@ func (s *BoltMetaStore) GetFileMeta(fileID string) (*FileMeta, error) {
 	return &meta, err
 }
 
-func (s *BoltMetaStore) ListFiles() ([]string, error) {
-	var files []string
+// CatalogEntry is the lightweight per-file summary served to peers so they
+// can decide whether to sync without fetching full chunk lists for every
+// file in the store.
+type CatalogEntry struct {
+	FileID     string
+	MerkleRoot [32]byte
+	LamportTS  uint64
+}
+
+func (s *BoltMetaStore) ListCatalog() ([]CatalogEntry, error) {
+	var entries []CatalogEntry
 	err := s.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte("files"))
 		if b == nil {
 			return nil
 		}
 		return b.ForEach(func(k, v []byte) error {
-			files = append(files, string(k))
+			var m FileMeta
+			if err := json.Unmarshal(v, &m); err != nil {
+				return nil
+			}
+			entries = append(entries, CatalogEntry{
+				FileID:     m.FileID,
+				MerkleRoot: m.MerkleRoot,
+				LamportTS:  m.LamportTS,
+			})
 			return nil
 		})
 	})
-	return files, err
+	return entries, err
 }
 
 func (s *BoltMetaStore) Close() error {

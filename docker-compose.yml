@@ -1,0 +1,183 @@
+x-node: &node-defaults
+  build: .
+  environment:
+    - NUSYNC_SECRET=${NUSYNC_SECRET}
+
+services:
+  node0:
+    <<: *node-defaults
+    container_name: nusync-node0
+    hostname: node0
+    volumes:
+      - ./testdata/node0/sync:/data/sync
+    command:
+      - -name=node0
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+
+  node1:
+    <<: *node-defaults
+    container_name: nusync-node1
+    hostname: node1
+    depends_on: [node0]
+    volumes:
+      - ./testdata/node1/sync:/data/sync
+    command:
+      - -name=node1
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+      - -seeds=node0:7946
+
+  node2:
+    <<: *node-defaults
+    container_name: nusync-node2
+    hostname: node2
+    depends_on: [node0]
+    volumes:
+      - ./testdata/node2/sync:/data/sync
+    command:
+      - -name=node2
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+      - -seeds=node0:7946
+
+  node3:
+    <<: *node-defaults
+    container_name: nusync-node3
+    hostname: node3
+    depends_on: [node0]
+    volumes:
+      - ./testdata/node3/sync:/data/sync
+    command:
+      - -name=node3
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+      - -seeds=node0:7946
+
+  node4:
+    <<: *node-defaults
+    container_name: nusync-node4
+    hostname: node4
+    depends_on: [node0]
+    volumes:
+      - ./testdata/node4/sync:/data/sync
+    command:
+      - -name=node4
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+      - -seeds=node0:7946
+
+  node5:
+    <<: *node-defaults
+    container_name: nusync-node5
+    hostname: node5
+    depends_on: [node0]
+    volumes:
+      - ./testdata/node5/sync:/data/sync
+    command:
+      - -name=node5
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+      - -seeds=node0:7946
+
+  node6:
+    <<: *node-defaults
+    container_name: nusync-node6
+    hostname: node6
+    depends_on: [node0]
+    volumes:
+      - ./testdata/node6/sync:/data/sync
+    command:
+      - -name=node6
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+      - -seeds=node0:7946
+
+  node7:
+    <<: *node-defaults
+    container_name: nusync-node7
+    hostname: node7
+    depends_on: [node0]
+    volumes:
+      - ./testdata/node7/sync:/data/sync
+    command:
+      - -name=node7
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+      - -seeds=node0:7946
+
+  node8:
+    <<: *node-defaults
+    container_name: nusync-node8
+    hostname: node8
+    depends_on: [node0]
+    volumes:
+      - ./testdata/node8/sync:/data/sync
+    command:
+      - -name=node8
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+      - -seeds=node0:7946
+
+  node9:
+    <<: *node-defaults
+    container_name: nusync-node9
+    hostname: node9
+    depends_on: [node0]
+    volumes:
+      - ./testdata/node9/sync:/data/sync
+    command:
+      - -name=node9
+      - -dir=/data/sync
+      - -data=/data/store
+      - -http=9100
+      - -grpc=9000
+      - -gossip=7946
+      - -api=8080
+      - -secret=${NUSYNC_SECRET}
+      - -seeds=node0:7946

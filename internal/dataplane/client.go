@@ -212,7 +212,7 @@ func (c *Client) FetchMeta(ctx context.Context, peerAddr string, fileID string) 
 	return &meta, nil
 }
 
-func (c *Client) FetchCatalog(ctx context.Context, peerAddr string) ([]string, error) {
+func (c *Client) FetchCatalog(ctx context.Context, peerAddr string) ([]store.CatalogEntry, error) {
 	url := fmt.Sprintf("http://%s/catalog", peerAddr)
 
 	req, err := http.NewRequestWithContext(
@@ -240,12 +240,12 @@ func (c *Client) FetchCatalog(ctx context.Context, peerAddr string) ([]string, e
 		)
 	}
 
-	var files []string
-	if err := json.NewDecoder(resp.Body).Decode(&files); err != nil {
+	var entries []store.CatalogEntry
+	if err := json.NewDecoder(resp.Body).Decode(&entries); err != nil {
 		return nil, fmt.Errorf("invalid catalog JSON: %w", err)
 	}
 
-	return files, nil
+	return entries, nil
 }
 
 func ParseRateLimit(resp *http.Response) time.Duration {

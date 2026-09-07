@@ -1,0 +1,5 @@
+bin/
+.git/
+testdata/
+*-nusync-data/
+*.log

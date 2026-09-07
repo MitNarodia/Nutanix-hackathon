@@ -35,7 +35,10 @@ func (s *ControlServer) DiffMerkleTree(ctx context.Context, req *pb.DiffRequest)
 		}, nil
 	}
 
-	if bytes.Equal(meta.MerkleRoot[:], req.LocalMerkleRoot) {
+	// a 32-byte root means the requester actually has local metadata for
+	// this file; anything else means "never seen it", which we shouldn't
+	// treat as equal to a genuinely-empty file's all-zero root
+	if len(req.LocalMerkleRoot) == 32 && bytes.Equal(meta.MerkleRoot[:], req.LocalMerkleRoot) {
 		return &pb.DiffResponse{
 			FileId:           req.FileId,
 			RemoteMerkleRoot: meta.MerkleRoot[:],

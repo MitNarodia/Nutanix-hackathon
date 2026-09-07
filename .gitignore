@@ -14,3 +14,13 @@ nusync
 .nusync/
 data/
 testdata/
+final-tests/
+docker-compose.generated.yml
+
+# Secrets / local-only config
+.env
+
+# Notes and test output not needed to build/run
+impl.txt
+restored_file.txt
+TEST_RESULTS.md
